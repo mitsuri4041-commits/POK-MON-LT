@@ -507,7 +507,6 @@ static void drawBattlePokemon(void)
 
     drawPokemon(&playerMon,0);
 
-    enemy.y=0;
     enemy.mood=(battle.frame%100<25)?1:0;
     drawPokemon(&enemy,1);
 
