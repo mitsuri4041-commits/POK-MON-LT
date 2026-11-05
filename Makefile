@@ -29,7 +29,8 @@ CFILES := $(wildcard $(SOURCES)/*.c)
 OFILES := $(patsubst $(SOURCES)/%.c,$(BUILD)/%.o,$(CFILES))
 
 SHADER := $(BUILD)/world.v.shbin
-SHADER_HEADER := $(BUILD)/world_v_shbin.h
+$(SHADER_HEADER): $(SHADER)
+	python3 -c 'import sys,struct; d=open(sys.argv[1],"rb").read(); n=len(d); d+=b"\0"*((-n)%4); w=struct.unpack("<%dI"%(len(d)//4),d); f=open(sys.argv[2],"w"); f.write("#pragma once\n#include <stdint.h>\nstatic const uint32_t world_v_shbin[] __attribute__((aligned(4))) = {"+",".join("0x%08x"%x for x in w)+"};\nstatic const unsigned int world_v_shbin_size = "+str(n)+";\n")' $< $@
 
 .PHONY: all clean
 
