@@ -1,0 +1,11 @@
+.out outpos position
+.out outcolor color
+
+.alias inpos v0
+.alias incolor v1
+
+.proc main
+    mov outpos, inpos
+    mov outcolor, incolor
+    end
+.end
