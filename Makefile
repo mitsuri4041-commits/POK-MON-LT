@@ -1,3 +1,4 @@
+
 ifeq ($(strip $(DEVKITPRO)),)
 $(error DEVKITPRO is not set)
 endif
@@ -15,10 +16,7 @@ CFLAGS := -g -Wall -O2 -mword-relocations \
           $(ARCH) -D__3DS__
 
 LDFLAGS := -specs=3dsx.specs -g $(ARCH)
-
 LIBS := -lcitro3d -lctru -lm
-
-VPATH := $(SOURCES)
 
 CFILES := $(wildcard $(SOURCES)/*.c)
 OFILES := $(patsubst $(SOURCES)/%.c,$(BUILD)/%.o,$(CFILES))
