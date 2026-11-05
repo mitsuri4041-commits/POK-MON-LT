@@ -45,7 +45,8 @@ $(SHADER): $(SOURCES)/world.v.pica | $(BUILD)
 $(SHADER_HEADER): $(SHADER)
 	python3 -c 'import sys; d=open(sys.argv[1],"rb").read(); f=open(sys.argv[2],"w"); f.write("#pragma once\n#include <stddef.h>\nstatic const unsigned int world_v_shbin[] __attribute__((aligned(4))) = {"); f.write(",".join("0x%02x"%b for b in d)); f.write("};\nstatic const unsigned int world_v_shbin_size = sizeof(world_v_shbin);\n")' $< $@
 
-$(BUILD)/main.o: $(SOURCES)/main.c $(SHADER_HEADER) | $(BUILD)
+$(BUILD)/main.o: $(SOURCES)/main.c | $(BUILD)
+$(BUILD)/main.o: $(SHADER_HEADER)
 	$(CC) $(CFLAGS) -I$(BUILD) -c $< -o $@
 
 $(TARGET).elf: $(BUILD)/main.o
