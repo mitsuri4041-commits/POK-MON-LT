@@ -1,8 +1,8 @@
-
 #include <3ds.h>
 #include <citro3d.h>
 #include <stdio.h>
 #include <math.h>
+#include <string.h>
 #include "world_v_shbin.h"
 
 #define PI 3.14159265f
@@ -28,18 +28,41 @@ typedef struct {
     int mood;
 } Pokemon;
 
+typedef struct {
+    char name[32];
+    int power;
+    int cooldown;
+} BattleMove;
+
+typedef struct {
+    int active;
+    int ended;
+    int victory;
+    int playerHP;
+    int enemyHP;
+    int playerMaxHP;
+    int enemyMaxHP;
+    int enemyCooldown;
+    int attackCooldown;
+    int dodgeTimer;
+    int effectTimer;
+    int exp;
+    int mega;
+    int frame;
+} BattleSystem;
+
 static C3D_RenderTarget *target;
 static DVLB_s *shaderData;
 static shaderProgram_s shader;
 static C3D_Mtx projection;
 static int projectionLocation;
 
-static float playerX=0.0f;
-static float playerZ=-4.0f;
-static float cameraX=0.0f;
-static float cameraZ=0.0f;
-static float animation=0.0f;
-static float moveAmount=0.0f;
+static float playerX=0;
+static float playerZ=-4;
+static float cameraX=0;
+static float cameraZ=0;
+static float animation=0;
+static float moveAmount=0;
 
 static int frameCount=0;
 static int messageTimer=0;
@@ -56,13 +79,29 @@ static Pokemon party[PARTY_SIZE]={
     {2,-7,.95f,.45f,.65f,5,"JIGGLYPUFF","Jiggly!",12,40,0}
 };
 
+static BattleSystem battle={0};
+
+static BattleMove moves[4]={
+    {"TACKLE",8,20},
+    {"EMBER",15,45},
+    {"THUNDER SHOCK",18,55},
+    {"SPECIAL ATTACK",25,90}
+};
+
+static Pokemon wildPokemon={
+    1.5f,-7,
+    .45f,.35f,.20f,
+    0,
+    "POOCHYENA",
+    "Poochyena!",
+    8,0,0
+};
+
 static void vertex(float x,float y,float z,
                    float r,float g,float b)
 {
-    C3D_ImmSendAttrib(
-        x-cameraX,y,z-cameraZ,1.0f
-    );
-    C3D_ImmSendAttrib(r,g,b,1.0f);
+    C3D_ImmSendAttrib(x-cameraX,y,z-cameraZ,1);
+    C3D_ImmSendAttrib(r,g,b,1);
 }
 
 static void quad(
@@ -213,7 +252,7 @@ static void drawPokemon(Pokemon *p,int index)
         float sparkle=sinf(frameCount*.2f)*.08f;
 
         box(x,y+.98f+sparkle,z,
-            .12f,.12f,.12f,1.0f,1.0f,.25f);
+            .12f,.12f,.12f,1,1,.25f);
     }
 }
 
@@ -264,13 +303,244 @@ static void interactPokemon(void)
     Pokemon *p=&party[nearest];
 
     if(p->friendship<255)
-        p->friendship+=1;
+        p->friendship++;
 
     snprintf(message,sizeof(message),
         "%s: %s Friendship: %d",
         p->name,p->greeting,p->friendship);
 
     messageTimer=240;
+}
+
+/* BATTLE SYSTEM */
+
+static void startBattle(void)
+{
+    if(battle.active) return;
+
+    battle.active=1;
+    battle.ended=0;
+    battle.victory=0;
+
+    battle.playerMaxHP=100+party[0].level*3;
+    battle.playerHP=battle.playerMaxHP;
+
+    battle.enemyMaxHP=70+wildPokemon.level*4;
+    battle.enemyHP=battle.enemyMaxHP;
+
+    battle.enemyCooldown=0;
+    battle.attackCooldown=0;
+    battle.dodgeTimer=0;
+    battle.effectTimer=0;
+    battle.exp=0;
+    battle.mega=0;
+    battle.frame=0;
+
+    snprintf(message,sizeof(message),
+        "A wild %s appeared!",wildPokemon.name);
+
+    messageTimer=180;
+}
+
+static void endBattle(int victory)
+{
+    battle.ended=1;
+    battle.victory=victory;
+
+    if(victory)
+    {
+        battle.exp=wildPokemon.level*12;
+        party[0].level+=battle.exp/100;
+
+        snprintf(message,sizeof(message),
+            "%s won! EXP +%d",
+            party[0].name,battle.exp);
+    }
+    else
+    {
+        snprintf(message,sizeof(message),
+            "Your Pokemon needs rest!");
+    }
+
+    messageTimer=240;
+}
+
+static void useMove(int moveIndex)
+{
+    if(!battle.active || battle.ended) return;
+    if(battle.attackCooldown>0) return;
+
+    int damage=moves[moveIndex].power;
+
+    if(battle.mega)
+        damage=(int)(damage*1.5f);
+
+    battle.enemyHP-=damage;
+
+    if(battle.enemyHP<0)
+        battle.enemyHP=0;
+
+    battle.attackCooldown=35;
+    battle.effectTimer=25;
+
+    snprintf(message,sizeof(message),
+        "%s used %s! Damage: %d",
+        party[0].name,moves[moveIndex].name,damage);
+
+    messageTimer=90;
+
+    if(battle.enemyHP<=0)
+        endBattle(1);
+}
+
+static void updateBattle(u32 down,u32 held)
+{
+    if(!battle.active) return;
+
+    if(battle.attackCooldown>0)
+        battle.attackCooldown--;
+
+    if(battle.effectTimer>0)
+        battle.effectTimer--;
+
+    if(battle.dodgeTimer>0)
+        battle.dodgeTimer--;
+
+    battle.frame++;
+
+    if(battle.ended)
+    {
+        if(down&KEY_A)
+        {
+            battle.active=0;
+            battle.ended=0;
+            battle.mega=0;
+            playerX=0;
+            playerZ=-4;
+        }
+        return;
+    }
+
+    if(down&KEY_A)
+        useMove(0);
+
+    if(down&KEY_X)
+        useMove(1);
+
+    if(down&KEY_Y)
+        useMove(2);
+
+    if(down&KEY_R)
+        useMove(3);
+
+    if(down&KEY_L)
+    {
+        battle.mega=!battle.mega;
+        snprintf(message,sizeof(message),
+            battle.mega?"MEGA MODE ACTIVATED!":
+                        "MEGA MODE OFF");
+        messageTimer=100;
+    }
+
+    if(held&KEY_B)
+        battle.dodgeTimer=12;
+
+    if(battle.enemyCooldown>0)
+        battle.enemyCooldown--;
+
+    if(battle.enemyCooldown==0)
+    {
+        if(battle.dodgeTimer==0)
+        {
+            int damage=7+wildPokemon.level/3;
+            battle.playerHP-=damage;
+
+            snprintf(message,sizeof(message),
+                "Wild %s attacked! -%d HP",
+                wildPokemon.name,damage);
+
+            messageTimer=80;
+        }
+        else
+        {
+            snprintf(message,sizeof(message),
+                "You dodged the attack!");
+            messageTimer=80;
+        }
+
+        battle.enemyCooldown=85;
+    }
+
+    if(battle.playerHP<=0)
+    {
+        battle.playerHP=0;
+        endBattle(0);
+    }
+}
+
+static void drawBattlePokemon(void)
+{
+    float bounce=sinf(frameCount*.12f)*.08f;
+
+    Pokemon playerMon=party[0];
+    playerMon.x=-1.5f;
+    playerMon.z=-7;
+    playerMon.r=party[0].r;
+    playerMon.g=party[0].g;
+    playerMon.b=party[0].b;
+    playerMon.phase=0;
+
+    Pokemon enemy=wildPokemon;
+    enemy.x=1.5f;
+    enemy.z=-9;
+    enemy.phase=2;
+
+    if(battle.mega)
+    {
+        playerMon.r=1;
+        playerMon.g=.75f;
+        playerMon.b=.1f;
+    }
+
+    if(battle.dodgeTimer>0)
+        playerMon.x=-1.5f+sinf(frameCount*.7f)*.5f;
+
+    drawPokemon(&playerMon,0);
+
+    enemy.y=0;
+    enemy.mood=(battle.frame%100<25)?1:0;
+    drawPokemon(&enemy,1);
+
+    if(battle.effectTimer>0)
+    {
+        float pulse=1.0f+
+            sinf(frameCount*.8f)*.3f;
+
+        box(0,.4f+bounce,-7,
+            pulse,.5f,pulse,
+            1,.8f,.1f);
+    }
+}
+
+static void renderBattle(void)
+{
+    C3D_FVUnifMtx4x4(
+        GPU_VERTEX_SHADER,
+        projectionLocation,
+        &projection
+    );
+
+    quad(-12,-1.3f,-3,12,-1.3f,-3,
+         12,-1.3f,-25,-12,-1.3f,-25,
+         .28f,.34f,.28f);
+
+    box(-1.5f,-1.25f,-7,
+        2.4f,.15f,1.8f,.3f,.55f,.8f);
+
+    box(1.5f,-1.25f,-9,
+        2.4f,.15f,1.8f,.65f,.55f,.3f);
+
+    drawBattlePokemon();
 }
 
 static void updatePlayer(void)
@@ -354,7 +624,9 @@ static void initializeScene(void)
 static void renderWorld(void)
 {
     C3D_FVUnifMtx4x4(
-        GPU_VERTEX_SHADER,projectionLocation,&projection
+        GPU_VERTEX_SHADER,
+        projectionLocation,
+        &projection
     );
 
     drawGround();
@@ -368,6 +640,98 @@ static void renderWorld(void)
         drawPokemon(&party[i],i);
 
     drawPlayer();
+}
+
+static void drawConsole(void)
+{
+    consoleClear();
+
+    if(battle.active)
+    {
+        printf("POKEMON WORLD - BATTLE\n");
+        printf("========================\n\n");
+
+        printf("%s Lv.%d\n",
+            party[0].name,party[0].level);
+
+        printf("PLAYER HP: %d / %d\n",
+            battle.playerHP,battle.playerMaxHP);
+
+        printf("[");
+
+        int playerBars=
+            battle.playerHP*20/battle.playerMaxHP;
+
+        for(int i=0;i<20;i++)
+            printf(i<playerBars?"#":"-");
+
+        printf("]\n\n");
+
+        printf("WILD %s Lv.%d\n",
+            wildPokemon.name,wildPokemon.level);
+
+        printf("ENEMY HP: %d / %d\n",
+            battle.enemyHP,battle.enemyMaxHP);
+
+        printf("[");
+
+        int enemyBars=
+            battle.enemyHP*20/battle.enemyMaxHP;
+
+        for(int i=0;i<20;i++)
+            printf(i<enemyBars?"#":"-");
+
+        printf("]\n\n");
+
+        printf("A: TACKLE\n");
+        printf("X: EMBER\n");
+        printf("Y: THUNDER SHOCK\n");
+        printf("R: SPECIAL ATTACK\n");
+        printf("L: MEGA MODE\n");
+        printf("B: DODGE\n\n");
+
+        if(battle.ended)
+        {
+            printf("%s\n",message);
+            printf("A: RETURN TO WORLD");
+        }
+        else if(messageTimer>0)
+        {
+            printf("%s",message);
+        }
+        else
+        {
+            printf("Battle in progress...");
+        }
+
+        return;
+    }
+
+    printf("POKEMON WORLD\n");
+    printf("====================\n");
+    printf("FRIENDSHIP SYSTEM\n\n");
+
+    printf("CIRCLE PAD: MOVE\n");
+    printf("D-PAD: MOVE\n");
+    printf("B: RUN\n");
+    printf("A: TALK / FRIENDSHIP\n");
+    printf("R: START BATTLE\n");
+    printf("START: EXIT\n\n");
+
+    printf("YOUR PARTY:\n");
+
+    for(int i=0;i<PARTY_SIZE;i++)
+    {
+        printf("%d. %-12s Lv.%d\n",
+            i+1,party[i].name,party[i].level);
+    }
+
+    printf("\n");
+
+    if(messageTimer>0)
+        printf("%s\n",message);
+    else
+        printf("Your Pokemon are following you!");
 }
 
 int main(void)
@@ -399,20 +763,39 @@ int main(void)
 
     initializeScene();
 
+    if(!shaderData)
+    {
+        C3D_RenderTargetDelete(target);
+        C3D_Fini();
+        gfxExit();
+        return 1;
+    }
+
     while(aptMainLoop())
     {
         hidScanInput();
 
         u32 down=hidKeysDown();
+        u32 held=hidKeysHeld();
 
         if(down&KEY_START)
             break;
 
-        if(down&KEY_A)
-            interactPokemon();
+        if(!battle.active)
+        {
+            if(down&KEY_A)
+                interactPokemon();
 
-        updatePlayer();
-        updateParty();
+            if(down&KEY_R)
+                startBattle();
+
+            updatePlayer();
+            updateParty();
+        }
+        else
+        {
+            updateBattle(down,held);
+        }
 
         frameCount++;
 
@@ -423,40 +806,22 @@ int main(void)
         );
 
         C3D_FrameDrawOn(target);
-        renderWorld();
-        C3D_FrameEnd(0);
 
-        consoleClear();
-
-        printf("POKEMON WORLD\n");
-        printf("====================\n");
-        printf("FRIENDSHIP SYSTEM\n\n");
-
-        printf("CIRCLE PAD: MOVE\n");
-        printf("D-PAD: MOVE\n");
-        printf("B: RUN\n");
-        printf("A: TALK / FRIENDSHIP\n");
-        printf("START: EXIT\n\n");
-
-        printf("YOUR PARTY:\n");
-
-        for(int i=0;i<PARTY_SIZE;i++)
+        if(battle.active)
         {
-            printf("%d. %-12s Lv.%d\n",
-                i+1,party[i].name,party[i].level);
-        }
-
-        printf("\n");
-
-        if(messageTimer>0)
-        {
-            printf("%s\n",message);
-            messageTimer--;
+            renderBattle();
         }
         else
         {
-            printf("Your Pokemon are following you!");
+            renderWorld();
         }
+
+        C3D_FrameEnd(0);
+
+        drawConsole();
+
+        if(messageTimer>0)
+            messageTimer--;
     }
 
     shaderProgramFree(&shader);
