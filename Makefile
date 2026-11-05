@@ -11,11 +11,18 @@ SOURCES := source
 
 ARCH := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
 
+
 CFLAGS := -g -Wall -O2 -mword-relocations \
           -ffunction-sections -fdata-sections \
-          $(ARCH) -D__3DS__
+          $(ARCH) -D__3DS__ \
+          -I$(DEVKITPRO)/libctru/include \
+          -I$(DEVKITPRO)/citro3d/include
 
-LDFLAGS := -specs=3dsx.specs -g $(ARCH)
+
+LDFLAGS := -specs=3dsx.specs -g $(ARCH) \
+           -L$(DEVKITPRO)/libctru/lib \
+           -L$(DEVKITPRO)/citro3d/lib
+
 LIBS := -lcitro3d -lctru -lm
 
 CFILES := $(wildcard $(SOURCES)/*.c)
