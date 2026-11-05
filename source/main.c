@@ -6,6 +6,7 @@
 #include "world_v_shbin.h"
 
 #define PI 3.14159265f
+#define RAIN_COUNT 20
 
 #define DISPLAY_FLAGS ( \
     GX_TRANSFER_FLIP_VERT(0) | \
@@ -31,7 +32,17 @@ static float cameraZ = 0.0f;
 
 static float animation = 0.0f;
 static float moveAmount = 0.0f;
-static int sprinting = 0;
+
+static float waterTime = 0.0f;
+static float weatherTime = 0.0f;
+
+static int dayMode = 1;
+static int weatherMode = 0;
+static int frameCount = 0;
+
+static float rainX[RAIN_COUNT];
+static float rainY[RAIN_COUNT];
+static float rainZ[RAIN_COUNT];
 
 static void vertex(float x,float y,float z,
                    float r,float g,float b)
@@ -90,44 +101,43 @@ static void box(
     float front=z+d/2;
     float back=z-d/2;
 
-    /* Front */
     quad(a,bottom,front,c,bottom,front,
          c,top,front,a,top,front,r,g,b);
 
-    /* Back */
     quad(c,bottom,back,a,bottom,back,
-         a,top,back,c,top,back,r*0.75f,g*0.75f,b*0.75f);
+         a,top,back,c,top,back,
+         r*0.75f,g*0.75f,b*0.75f);
 
-    /* Left */
     quad(a,bottom,back,a,bottom,front,
          a,top,front,a,top,back,
          r*0.8f,g*0.8f,b*0.8f);
 
-    /* Right */
     quad(c,bottom,front,c,bottom,back,
          c,top,back,c,top,front,
          r*0.9f,g*0.9f,b*0.9f);
 
-    /* Top */
     quad(a,top,front,c,top,front,
          c,top,back,a,top,back,
-         r*1.1f,g*1.1f,b*1.1f);
-
-    /* Bottom */
-    quad(a,bottom,back,c,bottom,back,
-         c,bottom,front,a,bottom,front,
-         r*0.6f,g*0.6f,b*0.6f);
+         r,g,b);
 }
 
 static void drawGround(void)
 {
-    quad(-20,-1.3f,-3,20,-1.3f,-3,
-         24,-1.3f,-35,-24,-1.3f,-35,
-         0.18f,0.62f,0.20f);
+    quad(
+        -22,-1.3f,-3,
+         22,-1.3f,-3,
+         25,-1.3f,-35,
+        -25,-1.3f,-35,
+        0.16f,0.52f,0.17f
+    );
 
-    quad(-2.5f,-1.27f,-3,2.5f,-1.27f,-3,
-         2,-1.27f,-35,-2,-1.27f,-35,
-         0.62f,0.47f,0.30f);
+    quad(
+        -2.5f,-1.27f,-3,
+         2.5f,-1.27f,-3,
+         2.0f,-1.27f,-35,
+        -2.0f,-1.27f,-35,
+        0.58f,0.43f,0.29f
+    );
 }
 
 static void drawTree(float x,float z,float s)
@@ -137,35 +147,94 @@ static void drawTree(float x,float z,float s)
     box(x,y,z,0.35f*s,1.0f*s,0.35f*s,
         0.38f,0.20f,0.08f);
 
-    triangle(x-0.9f*s,y+0.5f*s,z,
-             x+0.9f*s,y+0.5f*s,z,
-             x,y+2.4f*s,z,
-             0.04f,0.36f,0.10f);
+    triangle(
+        x-0.9f*s,y+0.5f*s,z,
+        x+0.9f*s,y+0.5f*s,z,
+        x,y+2.4f*s,z,
+        0.04f,0.34f,0.10f
+    );
 
-    triangle(x-0.7f*s,y+1.2f*s,z-0.02f,
-             x+0.7f*s,y+1.2f*s,z-0.02f,
-             x,y+2.9f*s,z-0.02f,
-             0.10f,0.55f,0.14f);
+    triangle(
+        x-0.7f*s,y+1.2f*s,z-0.02f,
+        x+0.7f*s,y+1.2f*s,z-0.02f,
+        x,y+2.9f*s,z-0.02f,
+        0.10f,0.52f,0.14f
+    );
 }
 
 static void drawHouse(float x,float z,float s)
 {
     float y=-1.25f;
 
-    box(x,y,z,s*1.8f,s*1.5f,0.8f*s,
-        0.88f,0.70f,0.48f);
+    box(x,y,z,s*1.8f,s*1.5f,s*0.8f,
+        0.85f,0.70f,0.50f);
 
-    triangle(x-s,y+1.5f*s,z+0.42f*s,
-             x+s,y+1.5f*s,z+0.42f*s,
-             x,y+2.5f*s,z+0.42f*s,
-             0.65f,0.12f,0.10f);
+    triangle(
+        x-s,y+1.5f*s,z+0.42f*s,
+        x+s,y+1.5f*s,z+0.42f*s,
+        x,y+2.5f*s,z+0.42f*s,
+        0.62f,0.12f,0.10f
+    );
 
-    box(x,y,z+0.43f*s,0.38f*s,0.85f*s,
-        0.08f*s,0.28f,0.15f,0.08f);
+    box(
+        x,y,z+0.43f*s,
+        0.38f*s,0.85f*s,0.08f*s,
+        0.28f,0.15f,0.08f
+    );
 
-    box(x+0.55f*s,y+0.65f*s,z+0.44f*s,
+    box(
+        x+0.55f*s,y+0.65f*s,z+0.44f*s,
         0.35f*s,0.38f*s,0.06f*s,
-        0.25f,0.70f,0.90f);
+        dayMode ? 0.25f : 1.0f,
+        dayMode ? 0.70f : 0.65f,
+        dayMode ? 0.90f : 0.20f
+    );
+}
+
+static void drawWater(void)
+{
+    quad(
+        6,-1.28f,-5,
+        12,-1.28f,-5,
+        12,-1.28f,-25,
+        6,-1.28f,-25,
+        0.05f,0.35f,0.78f
+    );
+
+    for(int i=0;i<7;i++)
+    {
+        float z=-7.0f-i*2.3f;
+        float x=8.0f+sinf(waterTime+i)*0.6f;
+
+        quad(
+            x,-1.25f,z,
+            x+1.0f,-1.25f,z,
+            x+1.0f,-1.25f,z-0.08f,
+            x,-1.25f,z-0.08f,
+            0.55f,0.85f,1.0f
+        );
+    }
+}
+
+static void drawRain(void)
+{
+    if(weatherMode!=1)
+        return;
+
+    for(int i=0;i<RAIN_COUNT;i++)
+    {
+        float x=rainX[i];
+        float y=rainY[i];
+        float z=rainZ[i];
+
+        quad(
+            x,y,z,
+            x+0.025f,y,z,
+            x+0.08f,y-0.45f,z,
+            x+0.055f,y-0.45f,z,
+            0.65f,0.80f,1.0f
+        );
+    }
 }
 
 static void drawPlayer(void)
@@ -174,16 +243,14 @@ static void drawPlayer(void)
     float z=playerZ;
     float y=-1.23f;
 
-    float swing=sinf(animation)*0.16f*moveAmount;
+    float swing=sinf(animation)*0.14f*moveAmount;
 
-    /* Shoes */
     box(x-0.12f,y,z,0.22f,0.12f,0.32f,
         0.12f,0.10f,0.08f);
 
     box(x+0.12f,y,z,0.22f,0.12f,0.32f,
         0.12f,0.10f,0.08f);
 
-    /* Legs */
     box(x-0.12f,y+0.12f+swing,z,
         0.18f,0.40f,0.22f,
         0.12f,0.18f,0.52f);
@@ -192,17 +259,13 @@ static void drawPlayer(void)
         0.18f,0.40f,0.22f,
         0.12f,0.18f,0.52f);
 
-    /* Body */
-    box(x,y+0.52f,z,
-        0.52f,0.55f,0.30f,
+    box(x,y+0.52f,z,0.52f,0.55f,0.30f,
         0.85f,0.18f,0.12f);
 
-    /* Backpack */
     box(x,y+0.55f,z-0.20f,
         0.38f,0.42f,0.18f,
         0.10f,0.20f,0.65f);
 
-    /* Arms */
     box(x-0.32f,y+0.48f+swing,z,
         0.16f,0.48f,0.20f,
         0.95f,0.68f,0.45f);
@@ -211,26 +274,20 @@ static void drawPlayer(void)
         0.16f,0.48f,0.20f,
         0.95f,0.68f,0.45f);
 
-    /* Neck */
-    box(x,y+1.02f,z,0.18f,0.12f,0.18f,
+    box(x,y+1.02f,z,
+        0.18f,0.12f,0.18f,
         0.95f,0.68f,0.45f);
 
-    /* Head */
-    box(x,y+1.18f,z,0.38f,0.38f,0.32f,
+    box(x,y+1.18f,z,
+        0.38f,0.38f,0.32f,
         0.95f,0.68f,0.45f);
 
-    /* Hair */
     box(x,y+1.37f,z-0.02f,
         0.40f,0.16f,0.34f,
         0.18f,0.10f,0.06f);
 
-    /* Cap */
     box(x,y+1.48f,z,
         0.48f,0.10f,0.42f,
-        0.10f,0.18f,0.68f);
-
-    box(x,y+1.43f,z+0.22f,
-        0.45f,0.04f,0.20f,
         0.10f,0.18f,0.68f);
 }
 
@@ -273,11 +330,22 @@ static void initializeScene(void)
     C3D_TexEnv *environment=C3D_GetTexEnv(0);
 
     C3D_TexEnvInit(environment);
-    C3D_TexEnvSrc(environment,C3D_Both,
-                  GPU_PRIMARY_COLOR,0,0);
-    C3D_TexEnvFunc(environment,C3D_Both,GPU_REPLACE);
+    C3D_TexEnvSrc(
+        environment,C3D_Both,
+        GPU_PRIMARY_COLOR,0,0
+    );
+    C3D_TexEnvFunc(
+        environment,C3D_Both,GPU_REPLACE
+    );
 
     C3D_DepthTest(true,GPU_GEQUAL,GPU_WRITE_ALL);
+
+    for(int i=0;i<RAIN_COUNT;i++)
+    {
+        rainX[i]=(float)((i*37)%14)-7.0f;
+        rainY[i]=(float)((i*19)%7);
+        rainZ[i]=-5.0f-(float)((i*13)%20);
+    }
 }
 
 static void updatePlayer(void)
@@ -290,17 +358,16 @@ static void updatePlayer(void)
     float dx=circle.dx/128.0f;
     float dz=-circle.dy/128.0f;
 
-    if(keys&KEY_LEFT)  dx-=1.0f;
+    if(keys&KEY_LEFT) dx-=1.0f;
     if(keys&KEY_RIGHT) dx+=1.0f;
-    if(keys&KEY_UP)    dz-=1.0f;
-    if(keys&KEY_DOWN)  dz+=1.0f;
+    if(keys&KEY_UP) dz-=1.0f;
+    if(keys&KEY_DOWN) dz+=1.0f;
 
     float length=sqrtf(dx*dx+dz*dz);
 
     moveAmount=length>0.1f?1.0f:0.0f;
-    sprinting=(keys&KEY_B)?1:0;
 
-    playerSpeed=sprinting?0.075f:0.045f;
+    playerSpeed=(keys&KEY_B)?0.075f:0.045f;
 
     if(length>1.0f)
         length=1.0f;
@@ -313,7 +380,7 @@ static void updatePlayer(void)
         playerX+=dx*playerSpeed;
         playerZ+=dz*playerSpeed;
 
-        animation+=sprinting?0.32f:0.20f;
+        animation+=(keys&KEY_B)?0.32f:0.20f;
     }
 
     if(playerX < -5.0f) playerX=-5.0f;
@@ -326,6 +393,38 @@ static void updatePlayer(void)
     cameraZ=playerZ+4.0f;
 }
 
+static void updateEnvironment(void)
+{
+    waterTime+=0.08f;
+    weatherTime+=0.05f;
+    frameCount++;
+
+    if(weatherMode==1)
+    {
+        for(int i=0;i<RAIN_COUNT;i++)
+        {
+            rainY[i]-=0.18f;
+
+            if(rainY[i]<-1.0f)
+            {
+                rainY[i]=5.0f;
+                rainX[i]=(float)((frameCount+i*17)%14)-7.0f;
+            }
+        }
+    }
+}
+
+static u32 getSkyColor(void)
+{
+    if(!dayMode)
+        return weatherMode==1 ? 0x25334FFF : 0x101B3FFF;
+
+    if(weatherMode==1)
+        return 0x586C83FF;
+
+    return 0x87CEEBFF;
+}
+
 static void renderWorld(void)
 {
     C3D_FVUnifMtx4x4(
@@ -336,6 +435,8 @@ static void renderWorld(void)
 
     drawGround();
 
+    drawWater();
+
     drawTree(-4,-6,1.0f);
     drawTree(4,-6,1.0f);
     drawTree(-6,-10,1.3f);
@@ -345,6 +446,8 @@ static void renderWorld(void)
 
     drawHouse(-4,-12,1.0f);
     drawHouse(4,-18,1.0f);
+
+    drawRain();
 
     drawPlayer();
 }
@@ -387,16 +490,24 @@ int main(void)
         if(down&KEY_START)
             break;
 
+        if(down&KEY_X)
+            weatherMode=(weatherMode+1)%2;
+
+        if(down&KEY_Y)
+            dayMode=!dayMode;
+
         updatePlayer();
+        updateEnvironment();
 
         C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 
         C3D_RenderTargetClear(
             target,C3D_CLEAR_ALL,
-            0x87CEEBFF,0
+            getSkyColor(),0
         );
 
         C3D_FrameDrawOn(target);
+
         renderWorld();
 
         C3D_FrameEnd(0);
@@ -405,15 +516,21 @@ int main(void)
 
         printf("POKEMON WORLD\n");
         printf("====================\n");
-        printf("3D CHARACTER SYSTEM\n\n");
+        printf("ENVIRONMENT SYSTEM\n\n");
+
         printf("CIRCLE PAD: MOVE\n");
         printf("D-PAD: MOVE\n");
         printf("B: RUN\n");
+        printf("X: WEATHER\n");
+        printf("Y: DAY / NIGHT\n");
         printf("START: EXIT\n\n");
+
+        printf("TIME: %s\n",dayMode?"DAY":"NIGHT");
+        printf("WEATHER: %s\n",
+               weatherMode==1?"RAIN":"CLEAR");
+
         printf("PLAYER X: %.2f\n",playerX);
         printf("PLAYER Z: %.2f\n",playerZ);
-        printf("ANIMATION: %s\n",
-               moveAmount>0?"MOVING":"IDLE");
     }
 
     shaderProgramFree(&shader);
