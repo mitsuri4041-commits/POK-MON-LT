@@ -18,11 +18,14 @@
 )
 
 typedef struct {
-    float x, z;
-    float r, g, b;
+    float x,z;
+    float r,g,b;
     float phase;
     const char *name;
+    const char *greeting;
     int level;
+    int friendship;
+    int mood;
 } Pokemon;
 
 static C3D_RenderTarget *target;
@@ -31,29 +34,34 @@ static shaderProgram_s shader;
 static C3D_Mtx projection;
 static int projectionLocation;
 
-static float playerX = 0.0f;
-static float playerZ = -4.0f;
-static float cameraX = 0.0f;
-static float cameraZ = 0.0f;
-static float animation = 0.0f;
-static float moveAmount = 0.0f;
-static int frameCount = 0;
-static int messageTimer = 0;
-static char message[80] = "Your Pokemon are following you!";
+static float playerX=0.0f;
+static float playerZ=-4.0f;
+static float cameraX=0.0f;
+static float cameraZ=0.0f;
+static float animation=0.0f;
+static float moveAmount=0.0f;
 
-static Pokemon party[PARTY_SIZE] = {
-    {-1.0f,-5.0f,0.95f,0.25f,0.15f,0.0f,"CHARMANDER",12},
-    { 1.0f,-5.0f,0.20f,0.55f,0.95f,1.0f,"SQUIRTLE",12},
-    {-1.5f,-6.0f,0.25f,0.80f,0.25f,2.0f,"BULBASAUR",12},
-    { 1.5f,-6.0f,0.95f,0.80f,0.15f,3.0f,"PIKACHU",12},
-    {-2.0f,-7.0f,0.75f,0.35f,0.85f,4.0f,"EEVEE",12},
-    { 2.0f,-7.0f,0.95f,0.45f,0.65f,5.0f,"JIGGLYPUFF",12}
+static int frameCount=0;
+static int messageTimer=0;
+static int selectedPokemon=-1;
+
+static char message[128]="Your Pokemon are happy!";
+
+static Pokemon party[PARTY_SIZE]={
+    {-1,-5,.95f,.25f,.15f,0,"CHARMANDER","Char!",12,30,0},
+    {1,-5,.20f,.55f,.95f,1,"SQUIRTLE","Squirtle!",12,35,0},
+    {-1.5f,-6,.25f,.80f,.25f,2,"BULBASAUR","Bulba!",12,40,0},
+    {1.5f,-6,.95f,.80f,.15f,3,"PIKACHU","Pika Pika!",12,50,0},
+    {-2,-7,.75f,.35f,.85f,4,"EEVEE","Eevee!",12,45,0},
+    {2,-7,.95f,.45f,.65f,5,"JIGGLYPUFF","Jiggly!",12,40,0}
 };
 
 static void vertex(float x,float y,float z,
                    float r,float g,float b)
 {
-    C3D_ImmSendAttrib(x-cameraX,y,z-cameraZ,1.0f);
+    C3D_ImmSendAttrib(
+        x-cameraX,y,z-cameraZ,1.0f
+    );
     C3D_ImmSendAttrib(r,g,b,1.0f);
 }
 
@@ -96,21 +104,24 @@ static void box(float x,float y,float z,
                 float w,float h,float d,
                 float r,float g,float b)
 {
-    float a=x-w/2, c=x+w/2;
-    float bottom=y, top=y+h;
-    float front=z+d/2, back=z-d/2;
+    float a=x-w/2,c=x+w/2;
+    float bottom=y,top=y+h;
+    float front=z+d/2,back=z-d/2;
 
     quad(a,bottom,front,c,bottom,front,
          c,top,front,a,top,front,r,g,b);
 
     quad(c,bottom,back,a,bottom,back,
-         a,top,back,c,top,back,r*.75f,g*.75f,b*.75f);
+         a,top,back,c,top,back,
+         r*.75f,g*.75f,b*.75f);
 
     quad(a,bottom,back,a,bottom,front,
-         a,top,front,a,top,back,r*.8f,g*.8f,b*.8f);
+         a,top,front,a,top,back,
+         r*.8f,g*.8f,b*.8f);
 
     quad(c,bottom,front,c,bottom,back,
-         c,top,back,c,top,front,r*.9f,g*.9f,b*.9f);
+         c,top,back,c,top,front,
+         r*.9f,g*.9f,b*.9f);
 
     quad(a,top,front,c,top,front,
          c,top,back,a,top,back,r,g,b);
@@ -120,25 +131,24 @@ static void drawGround(void)
 {
     quad(-22,-1.3f,-3,22,-1.3f,-3,
          25,-1.3f,-35,-25,-1.3f,-35,
-         0.16f,0.52f,0.17f);
+         .16f,.52f,.17f);
 
     quad(-2.5f,-1.27f,-3,2.5f,-1.27f,-3,
-         2.0f,-1.27f,-35,-2.0f,-1.27f,-35,
-         0.58f,0.43f,0.29f);
+         2,-1.27f,-35,-2,-1.27f,-35,
+         .58f,.43f,.29f);
 }
 
 static void drawTree(float x,float z)
 {
-    box(x,-1.25f,z,.35f,1.0f,.35f,
-        .38f,.20f,.08f);
+    box(x,-1.25f,z,.35f,1,.35f,.38f,.20f,.08f);
 
-    triangle(x-.9f,-.75f,z,x+.9f,-.75f,z,
+    triangle(x-.9f,-.75f,z,
+             x+.9f,-.75f,z,
              x,1.15f,z,.04f,.34f,.10f);
 
     triangle(x-.7f,-.05f,z-.02f,
              x+.7f,-.05f,z-.02f,
-             x,1.65f,z-.02f,
-             .10f,.52f,.14f);
+             x,1.65f,z-.02f,.10f,.52f,.14f);
 }
 
 static void drawPlayer(void)
@@ -171,33 +181,40 @@ static void drawPlayer(void)
         .48f,.10f,.42f,.10f,.18f,.68f);
 }
 
-static void drawPokemon(Pokemon *p)
+static void drawPokemon(Pokemon *p,int index)
 {
     float bob=sinf(frameCount*.06f+p->phase)*.07f;
     float x=p->x;
     float y=-1.23f+bob;
     float z=p->z;
 
-    /* Body */
+    if(p->mood==1)
+        y+=fabsf(sinf(frameCount*.12f+p->phase))*.12f;
+
     box(x,y,z,.62f,.58f,.52f,p->r,p->g,p->b);
 
-    /* Head */
     box(x,y+.48f,z-.04f,.48f,.42f,.42f,
         p->r,p->g,p->b);
 
-    /* Eyes */
     box(x-.12f,y+.68f,z+.18f,.07f,.09f,.04f,
         .04f,.04f,.04f);
 
     box(x+.12f,y+.68f,z+.18f,.07f,.09f,.04f,
         .04f,.04f,.04f);
 
-    /* Feet */
     box(x-.18f,y-.10f,z+.08f,.18f,.12f,.22f,
         p->r*.8f,p->g*.8f,p->b*.8f);
 
     box(x+.18f,y-.10f,z+.08f,.18f,.12f,.22f,
         p->r*.8f,p->g*.8f,p->b*.8f);
+
+    if(selectedPokemon==index && messageTimer>0)
+    {
+        float sparkle=sinf(frameCount*.2f)*.08f;
+
+        box(x,y+.98f+sparkle,z,
+            .12f,.12f,.12f,1.0f,1.0f,.25f);
+    }
 }
 
 static void updateParty(void)
@@ -212,13 +229,20 @@ static void updateParty(void)
 
         party[i].x+=(targetX-party[i].x)*.035f;
         party[i].z+=(targetZ-party[i].z)*.035f;
+
+        if(moveAmount>.1f)
+            party[i].mood=0;
+        else if((frameCount+i*30)%300<35)
+            party[i].mood=1;
+        else
+            party[i].mood=0;
     }
 }
 
 static void interactPokemon(void)
 {
     int nearest=-1;
-    float nearestDistance=999.0f;
+    float nearestDistance=999;
 
     for(int i=0;i<PARTY_SIZE;i++)
     {
@@ -233,15 +257,20 @@ static void interactPokemon(void)
         }
     }
 
-    if(nearest>=0)
-    {
-        snprintf(message,sizeof(message),
-                 "%s: Level %d! Hello, Trainer!",
-                 party[nearest].name,
-                 party[nearest].level);
+    if(nearest<0) return;
 
-        messageTimer=180;
-    }
+    selectedPokemon=nearest;
+
+    Pokemon *p=&party[nearest];
+
+    if(p->friendship<255)
+        p->friendship+=1;
+
+    snprintf(message,sizeof(message),
+        "%s: %s Friendship: %d",
+        p->name,p->greeting,p->friendship);
+
+    messageTimer=240;
 }
 
 static void updatePlayer(void)
@@ -254,20 +283,20 @@ static void updatePlayer(void)
     float dx=circle.dx/128.0f;
     float dz=-circle.dy/128.0f;
 
-    if(keys&KEY_LEFT) dx-=1.0f;
-    if(keys&KEY_RIGHT) dx+=1.0f;
-    if(keys&KEY_UP) dz-=1.0f;
-    if(keys&KEY_DOWN) dz+=1.0f;
+    if(keys&KEY_LEFT) dx-=1;
+    if(keys&KEY_RIGHT) dx+=1;
+    if(keys&KEY_UP) dz-=1;
+    if(keys&KEY_DOWN) dz+=1;
 
     float length=sqrtf(dx*dx+dz*dz);
 
-    moveAmount=length>.1f?1.0f:0.0f;
+    moveAmount=length>.1f?1:0;
 
     float speed=(keys&KEY_B)?.075f:.045f;
 
-    if(length>1.0f) length=1.0f;
+    if(length>1) length=1;
 
-    if(length>0.0f)
+    if(length>0)
     {
         dx/=length;
         dz/=length;
@@ -277,13 +306,13 @@ static void updatePlayer(void)
         animation+=.20f;
     }
 
-    if(playerX < -5.0f) playerX=-5.0f;
-    if(playerX > 5.0f) playerX=5.0f;
-    if(playerZ < -25.0f) playerZ=-25.0f;
-    if(playerZ > -3.0f) playerZ=-3.0f;
+    if(playerX < -5) playerX=-5;
+    if(playerX > 5) playerX=5;
+    if(playerZ < -25) playerZ=-25;
+    if(playerZ > -3) playerZ=-3;
 
     cameraX=playerX;
-    cameraZ=playerZ+4.0f;
+    cameraZ=playerZ+4;
 }
 
 static void initializeScene(void)
@@ -303,8 +332,10 @@ static void initializeScene(void)
         shader.vertexShader,"projection"
     );
 
-    Mtx_PerspTilt(&projection,60.0f*PI/180.0f,
-                  400.0f/240.0f,.1f,100.0f,false);
+    Mtx_PerspTilt(
+        &projection,60.0f*PI/180.0f,
+        400.0f/240.0f,.1f,100.0f,false
+    );
 
     C3D_AttrInfo *attributes=C3D_GetAttrInfo();
     AttrInfo_Init(attributes);
@@ -334,7 +365,7 @@ static void renderWorld(void)
     drawTree(6,-15);
 
     for(int i=0;i<PARTY_SIZE;i++)
-        drawPokemon(&party[i]);
+        drawPokemon(&party[i],i);
 
     drawPlayer();
 }
@@ -374,7 +405,8 @@ int main(void)
 
         u32 down=hidKeysDown();
 
-        if(down&KEY_START) break;
+        if(down&KEY_START)
+            break;
 
         if(down&KEY_A)
             interactPokemon();
@@ -398,12 +430,12 @@ int main(void)
 
         printf("POKEMON WORLD\n");
         printf("====================\n");
-        printf("OVERWORLD POKEMON\n\n");
+        printf("FRIENDSHIP SYSTEM\n\n");
 
         printf("CIRCLE PAD: MOVE\n");
         printf("D-PAD: MOVE\n");
         printf("B: RUN\n");
-        printf("A: TALK TO POKEMON\n");
+        printf("A: TALK / FRIENDSHIP\n");
         printf("START: EXIT\n\n");
 
         printf("YOUR PARTY:\n");
@@ -411,7 +443,7 @@ int main(void)
         for(int i=0;i<PARTY_SIZE;i++)
         {
             printf("%d. %-12s Lv.%d\n",
-                   i+1,party[i].name,party[i].level);
+                i+1,party[i].name,party[i].level);
         }
 
         printf("\n");
